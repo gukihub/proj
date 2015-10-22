@@ -1,3 +1,12 @@
+/*
+ *  proj - manage your projects
+ *
+ *  Guillaume Kielwasser
+ *
+ *  2015/10/21
+ *
+ */
+
 package main
 
 import (
@@ -14,11 +23,16 @@ import (
 	"time"
 )
 
-var prog_name string = os.Args[0]
-var version string = "1.0"
+const version string = "1.0"
 
-var projroot string = os.Getenv("HOME") + "/projects"
-var dbfile string = projroot + "/.proj.db"
+var (
+	prog_name string = os.Args[0]
+
+	projroot string = os.Getenv("HOME") + "/projects"
+	dbfile   string = projroot + "/.proj.db"
+
+	projshell string = "/usr/bin/ksh"
+)
 
 type Person struct {
 	key       sql.NullInt64
@@ -49,14 +63,16 @@ func checkdir(dir string, verbose bool) bool {
 
 	if err != nil {
 		if verbose == true {
-			fmt.Printf("%s: failed to stat %s (%v)\n", prog_name, dir, err)
+			fmt.Printf("%s: failed to stat %s (%v)\n",
+				prog_name, dir, err)
 		}
 		return false
 	}
 
 	if fi_buf.IsDir() == false {
 		if verbose == true {
-			fmt.Printf("%s: %s is not a directory\n", prog_name, dir)
+			fmt.Printf("%s: %s is not a directory\n",
+				prog_name, dir)
 		}
 		return false
 	}
@@ -88,7 +104,7 @@ func closedb(db *sql.DB) {
 	db.Close()
 }
 
-/* create the projects table in the db */
+// create the projects table in the db
 func initdb(db *sql.DB) {
 	sqlStmt := `
 	create table projects (
@@ -106,7 +122,7 @@ func initdb(db *sql.DB) {
 	}
 }
 
-/* populate the projects table */
+// populate the projects table
 func popdb(db *sql.DB) {
 	tx, err := db.Begin()
 	if err != nil {
@@ -215,9 +231,9 @@ func enterproj(name string) {
 	var workdir string
 
 	workdir, err = os.Getwd()
-        if err != nil {
-                log.Println(err)
-        }
+	if err != nil {
+		log.Println(err)
+	}
 
 	fmt.Println("Entering " + name + " project.")
 
@@ -226,8 +242,8 @@ func enterproj(name string) {
 		log.Println(err)
 	}
 
-	os.Setenv("PS1", "proj/" + name + "> ")
-	cmd := exec.Command("/usr/bin/ksh")
+	os.Setenv("PS1", "proj/"+name+"> ")
+	cmd := exec.Command(projshell)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -276,9 +292,9 @@ L:
 			listdb(db, arg1)
 		case "ll":
 			out, err := exec.Command("ls", "-ltr").Output()
-  			if err != nil {
-                		log.Println(err)
-        		}
+			if err != nil {
+				log.Println(err)
+			}
 			fmt.Printf("%s", out)
 		case "new":
 			newproj(db, arg1)
@@ -299,7 +315,7 @@ L:
 			`
 			fmt.Println(helpstr)
 		case "quit":
-                        break L
+			break L
 		default:
 			println("not found: " + *result)
 		}
@@ -310,10 +326,12 @@ L:
 
 func main() {
 	var v_flag *bool
+	var h_flag *bool
 	var db *sql.DB
 	var err error
 
 	v_flag = flag.Bool("version", false, "display program version")
+	h_flag = flag.Bool("help", false, "display "+prog_name+" usage")
 
 	flag.Parse()
 
@@ -321,17 +339,37 @@ func main() {
 		fmt.Printf("%s version %s\n", prog_name, version)
 		return
 	}
+	if *h_flag == true {
+		usage()
+		return
+	}
 
+	// check the projects root folder exists
 	if !checkdir(projroot, true) {
 		os.Exit(1)
 	}
 
+	// enter the projects root folder
 	err = os.Chdir(projroot)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	if len(os.Args) > 1 && os.Args[1] != "init" && !FileExists(dbfile) {
+	// case we initialize the database
+	if len(os.Args) == 2 && os.Args[1] == "init" {
+		if !FileExists(dbfile) {
+			db = opendb()
+			initdb(db)
+			closedb(db)
+			return
+		} else {
+			fmt.Printf("%s: %s exists!\n", prog_name, dbfile)
+			os.Exit(1)
+		}
+	}
+
+	// check the db exists
+	if !FileExists(dbfile) {
 		fmt.Printf("%s: %s not found, run %s init\n",
 			prog_name, dbfile, prog_name)
 		os.Exit(1)
@@ -339,11 +377,13 @@ func main() {
 
 	db = opendb()
 
+	// with no args, run projcli
 	if len(os.Args) == 1 {
 		projcli(db)
 		return
 	}
 
+	// parse arguments
 	switch os.Args[1] {
 	case "ls":
 		var pattern string
@@ -355,8 +395,6 @@ func main() {
 		listdb(db, pattern)
 	case "pop":
 		popdb(db)
-	case "init":
-		initdb(db)
 	case "new":
 		if len(os.Args) != 3 {
 			usage()
@@ -368,4 +406,6 @@ func main() {
 	}
 
 	closedb(db)
+
+	return
 }
