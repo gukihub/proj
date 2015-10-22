@@ -296,6 +296,7 @@ L:
 				log.Println(err)
 			}
 			fmt.Printf("%s", out)
+			ls(".")
 		case "new":
 			newproj(db, arg1)
 		case "cd":
