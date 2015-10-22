@@ -5,8 +5,12 @@ import (
 	"flag"
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/shavac/readline"
 	"log"
 	"os"
+	"os/exec"
+	"os/signal"
+	"strings"
 	"time"
 )
 
@@ -198,7 +202,7 @@ func newproj(db *sql.DB, name string) {
 	tx.Commit()
 
 	projdir := projroot + "/" + name
-	if ! checkdir(projdir , false) {
+	if !checkdir(projdir, false) {
 		err := os.Mkdir(projdir, 0700)
 		if err != nil {
 			log.Fatal(err)
@@ -206,9 +210,108 @@ func newproj(db *sql.DB, name string) {
 	}
 }
 
+func enterproj(name string) {
+	var err error
+	var workdir string
+
+	workdir, err = os.Getwd()
+        if err != nil {
+                log.Println(err)
+        }
+
+	fmt.Println("Entering " + name + " project.")
+
+	err = os.Chdir(projroot + "/" + name)
+	if err != nil {
+		log.Println(err)
+	}
+
+	os.Setenv("PS1", "proj/" + name + "> ")
+	cmd := exec.Command("/usr/bin/ksh")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	err = cmd.Run()
+	if err != nil {
+		log.Println(err)
+	}
+
+	err = os.Chdir(workdir)
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+func projcli(db *sql.DB) {
+	var arg1 string
+	var prompt string = "proj> "
+
+	signal.Ignore(os.Interrupt, os.Kill)
+
+	// loop until ReadLine returns nil (signalling EOF)
+L:
+	for {
+		result := readline.ReadLine(&prompt)
+
+		// exit loop with EOF(^D)
+		if result == nil {
+			println()
+			//break L
+			continue
+		}
+
+		r := strings.Split(*result, " ")
+
+		if len(r) > 1 {
+			arg1 = r[1]
+		} else {
+			arg1 = ""
+		}
+
+		switch r[0] {
+		// ignore blank lines
+		case "":
+			continue L
+		case "ls":
+			listdb(db, arg1)
+		case "ll":
+			out, err := exec.Command("ls", "-ltr").Output()
+  			if err != nil {
+                		log.Println(err)
+        		}
+			fmt.Printf("%s", out)
+		case "new":
+			newproj(db, arg1)
+		case "cd":
+			// trim the project name in case of completion
+			enterproj(strings.Trim(arg1, "/"))
+		case "help":
+			helpstr := prog_name + " help:" + `
+
+  Command              Description
+  ===================  ============================================
+  ls [pattern]         list projects
+  ll                   list folders in the projects directory
+  new <project name>   create a new project
+  cd <project name>    enter a project
+  help                 print this help
+  quit                 exit` + " " + prog_name + `
+			`
+			fmt.Println(helpstr)
+		case "quit":
+                        break L
+		default:
+			println("not found: " + *result)
+		}
+
+		readline.AddHistory(*result)
+	}
+}
+
 func main() {
 	var v_flag *bool
 	var db *sql.DB
+	var err error
 
 	v_flag = flag.Bool("version", false, "display program version")
 
@@ -219,22 +322,27 @@ func main() {
 		return
 	}
 
-	if len(os.Args) < 2 {
-		usage()
+	if !checkdir(projroot, true) {
 		os.Exit(1)
 	}
 
-	if ! checkdir(projroot, true) {
-		os.Exit(1)
+	err = os.Chdir(projroot)
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	if os.Args[1] != "init" && ! FileExists(dbfile) {
+	if len(os.Args) > 1 && os.Args[1] != "init" && !FileExists(dbfile) {
 		fmt.Printf("%s: %s not found, run %s init\n",
 			prog_name, dbfile, prog_name)
 		os.Exit(1)
 	}
 
 	db = opendb()
+
+	if len(os.Args) == 1 {
+		projcli(db)
+		return
+	}
 
 	switch os.Args[1] {
 	case "ls":
