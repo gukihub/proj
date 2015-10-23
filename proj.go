@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"os/user"
 	"strings"
 	"time"
 )
@@ -32,6 +33,10 @@ var (
 	dbfile   string = projroot + "/.proj.db"
 
 	projshell string = "/usr/bin/ksh"
+
+	verbose = 1
+
+	me *user.User
 )
 
 type Person struct {
@@ -47,6 +52,14 @@ type employee struct {
 	empName     sql.NullString
 	empAge      sql.NullInt64
 	empPersonId sql.NullInt64
+}
+
+func print(str string) {
+	if verbose == 0 {
+		return
+	}
+
+	fmt.Println(str)
 }
 
 func checkdir(dir string, verbose bool) bool {
@@ -106,44 +119,35 @@ func closedb(db *sql.DB) {
 
 // create the projects table in the db
 func initdb(db *sql.DB) {
-	sqlStmt := `
+	var sqlStmt string
+	var err error
+
+	sqlStmt = `
 	create table projects (
 		id integer not null primary key,
-		name text,
-		author integer,
-		creation_date text
+		name text unique not null,
+		author integer not null,
+		creation_date text not null
 	);
-	delete from projects;
 	`
-	_, err := db.Exec(sqlStmt)
+	_, err = db.Exec(sqlStmt)
 	if err != nil {
 		log.Printf("%q: %s\n", err, sqlStmt)
 		return
 	}
-}
 
-// populate the projects table
-func popdb(db *sql.DB) {
-	tx, err := db.Begin()
-	if err != nil {
-		log.Fatal(err)
-	}
-	req := `
-	insert into projects(name, author, creation_date)
-	values(?, ?, datetime('now'))
+	sqlStmt = `
+	create table users (
+		id integer not null primary key,
+		username text unique not null,
+		name text unique not null
+	);
 	`
-	stmt, err := tx.Prepare(req)
+	_, err = db.Exec(sqlStmt)
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("%q: %s\n", err, sqlStmt)
+		return
 	}
-	for i := 0; i < 100; i++ {
-		_, err = stmt.Exec(fmt.Sprintf("project%03d", i), 1)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-	stmt.Close()
-	tx.Commit()
 }
 
 func listdb(db *sql.DB, pattern string) {
@@ -153,17 +157,23 @@ func listdb(db *sql.DB, pattern string) {
 	if pattern != "" {
 		req = `
 		select
-			id, name, creation_date
+			projects.id, projects.name,
+			projects.creation_date, users.username
 		from
-			projects
+			projects, users
 		where
-			name like ` + "'%" + pattern + "%'"
+			projects.name like ` + "'%" + pattern + "%'" + `
+			and projects.author = users.id
+		`
 	} else {
 		req = `
 		select
-			id, name, creation_date
+			projects.id, projects.name,
+			projects.creation_date, users.username
 		from
-			projects
+			projects, users
+		where
+			projects.author = users.id
 		`
 
 	}
@@ -175,12 +185,14 @@ func listdb(db *sql.DB, pattern string) {
 		var id int
 		var name string
 		var date string
-		rows.Scan(&id, &name, &date)
+		var username string
+		rows.Scan(&id, &name, &date, &username)
 		creation_date, _ := time.Parse(datelayout, date)
-		fmt.Printf("%s%03d%s %s[%s]%s %s%s%s\n",
+		fmt.Printf("%s%03d%s %s %s[%s]%s %s%s%s\n",
 			"\033[31;1m",
 			id,
 			"\033[0m",
+			username,
 			"\033[43;31m",
 			creation_date.Format("2006-01-02"),
 			"\033[0m",
@@ -196,34 +208,88 @@ func usage() {
 		prog_name)
 }
 
-func newproj(db *sql.DB, name string) {
+func newproj(db *sql.DB, name string) int {
 	tx, err := db.Begin()
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return 1
 	}
 
 	req := `
 	insert into projects(name, author, creation_date)
 	values(?, ?, datetime('now'))
 	`
+
 	stmt, err := tx.Prepare(req)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		return 1
 	}
-	_, err = stmt.Exec(name, 1)
+
+	_, err = stmt.Exec(name, me.Uid)
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		stmt.Close()
+		tx.Commit()
+		return 1
 	}
+
 	stmt.Close()
 	tx.Commit()
 
+	print("created project " + name + " in database")
+
 	projdir := projroot + "/" + name
-	if !checkdir(projdir, false) {
-		err := os.Mkdir(projdir, 0700)
-		if err != nil {
-			log.Fatal(err)
-		}
+
+	if checkdir(projdir, false) {
+		print("not creating directory " + projdir +
+			" (already exist)")
+		return 1
 	}
+
+	err = os.Mkdir(projdir, 0700)
+	if err != nil {
+		log.Println(err)
+		return 1
+	}
+
+	print("created directory " + projdir)
+
+	return 0
+}
+
+func rmproj(db *sql.DB, name string) int {
+	tx, err := db.Begin()
+	if err != nil {
+		log.Println(err)
+		return 1
+	}
+
+	req := `
+        delete from projects
+        where name = ?
+        `
+
+	stmt, err := tx.Prepare(req)
+	if err != nil {
+		log.Println(err)
+		return 1
+	}
+
+	_, err = stmt.Exec(name)
+
+	stmt.Close()
+	tx.Commit()
+
+	// return if the exec failed
+	if err != nil {
+		log.Println(err)
+		return 1
+	}
+
+	print("deleted project " + name + " from database")
+
+	return 0
 }
 
 func enterproj(name string) {
@@ -235,11 +301,12 @@ func enterproj(name string) {
 		log.Println(err)
 	}
 
-	fmt.Println("Entering " + name + " project.")
+	print("Entering " + name + " project.")
 
 	err = os.Chdir(projroot + "/" + name)
 	if err != nil {
 		log.Println(err)
+		return
 	}
 
 	os.Setenv("PS1", "proj/"+name+"> ")
@@ -255,7 +322,9 @@ func enterproj(name string) {
 	err = os.Chdir(workdir)
 	if err != nil {
 		log.Println(err)
+		return
 	}
+	print("Leaving " + name + " project.")
 }
 
 func projcli(db *sql.DB) {
@@ -296,12 +365,14 @@ L:
 				log.Println(err)
 			}
 			fmt.Printf("%s", out)
-			ls(".")
+			//ls(".")
 		case "new":
 			newproj(db, arg1)
 		case "cd":
 			// trim the project name in case of completion
 			enterproj(strings.Trim(arg1, "/"))
+		case "rm":
+			rmproj(db, arg1)
 		case "help":
 			helpstr := prog_name + " help:" + `
 
@@ -311,6 +382,7 @@ L:
   ll                   list folders in the projects directory
   new <project name>   create a new project
   cd <project name>    enter a project
+  rm <project name>    delete a project from the database
   help                 print this help
   quit                 exit` + " " + prog_name + `
 			`
@@ -323,6 +395,47 @@ L:
 
 		readline.AddHistory(*result)
 	}
+}
+
+func banner() {
+	fmt.Println(`                                    _/   
+     _/_/_/    _/  _/_/    _/_/          
+    _/    _/  _/_/      _/    _/  _/     
+   _/    _/  _/        _/    _/  _/      
+  _/_/_/    _/          _/_/    _/       
+ _/                            _/        
+_/                          _/           `)
+	fmt.Println("   Welcome " + me.Name + " !")
+	fmt.Println("")
+}
+
+func reguser(db *sql.DB, me *user.User) int {
+        tx, err := db.Begin()
+        if err != nil {
+                log.Println(err)
+                return 1
+        }
+        req := `
+        insert into users(id, username, name)
+        values(?, ?, ?)
+        `
+
+        stmt, err := tx.Prepare(req)
+        if err != nil {
+                log.Println(err)
+                return 1
+        }
+
+        _, err = stmt.Exec(me.Uid, me.Username, me.Name)
+
+        stmt.Close()
+        tx.Commit()
+
+	// don't log anything here, it just means the user already exits
+        if err != nil {
+                return 1
+        }
+	return 0
 }
 
 func main() {
@@ -343,6 +456,12 @@ func main() {
 	if *h_flag == true {
 		usage()
 		return
+	}
+
+	// who am i?
+	me, err = user.Current()
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	// check the projects root folder exists
@@ -378,11 +497,17 @@ func main() {
 
 	db = opendb()
 
+	// register as a user in case of
+	reguser(db, me)
+
 	// with no args, run projcli
 	if len(os.Args) == 1 {
+		banner()
 		projcli(db)
 		return
 	}
+
+	verbose = 0
 
 	// parse arguments
 	switch os.Args[1] {
@@ -394,8 +519,6 @@ func main() {
 			pattern = ""
 		}
 		listdb(db, pattern)
-	case "pop":
-		popdb(db)
 	case "new":
 		if len(os.Args) != 3 {
 			usage()
