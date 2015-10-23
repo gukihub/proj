@@ -32,6 +32,8 @@ var (
 	verbose = 1
 
 	me *user.User
+
+	cliprompt string = "proj> "
 )
 
 func print(str string) {

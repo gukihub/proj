@@ -26,21 +26,45 @@ _/                          _/           `)
 	fmt.Println("Welcome " + me.Name + " !")
 }
 
+func clihelp() {
+	helpstr := prog_name + " help:" + `
+
+  Command              Description
+  ===================  ============================================
+  ls [pattern]         list projects
+  ll                   list folders in the projects directory
+  new <project name>   create a new project
+  cd <project name>    enter a project
+  rm <project name>    delete a project from the database
+  du                   display projects disk usage
+  find [pattern]       find files for pattern
+  help                 print this help
+  quit                 exit` + " " + prog_name + `
+                        `
+	fmt.Println(helpstr)
+}
+
+func runcmd(cmd string) {
+	out, err := exec.Command("sh", "-c", cmd).Output()
+	if err != nil {
+		log.Println(err)
+	}
+	fmt.Printf("%s", out)
+}
+
 func projcli(db *sql.DB) {
 	var arg1 string
-	var prompt string = "proj> "
 
 	signal.Ignore(os.Interrupt, os.Kill)
 
 	// loop until ReadLine returns nil (signalling EOF)
 L:
 	for {
-		result := readline.ReadLine(&prompt)
+		result := readline.ReadLine(&cliprompt)
 
 		// exit loop with EOF(^D)
 		if result == nil {
 			println()
-			//break L
 			continue
 		}
 
@@ -59,12 +83,8 @@ L:
 		case "ls":
 			listdb(db, arg1)
 		case "ll":
-			out, err := exec.Command("ls", "-ltr").Output()
-			if err != nil {
-				log.Println(err)
-			}
-			fmt.Printf("%s", out)
 			//ls(".")
+			runcmd("ls -ltr")
 		case "new":
 			newproj(db, arg1)
 		case "cd":
@@ -72,20 +92,14 @@ L:
 			enterproj(strings.Trim(arg1, "/"))
 		case "rm":
 			rmproj(db, arg1)
+		case "du":
+			runcmd("du -sk * | sort -n")
+		case "find":
+			format := "find * -type f -exec grep -l \"%s\" {} \\;"
+			cmd := fmt.Sprintf(format, arg1)
+			runcmd(cmd)
 		case "help":
-			helpstr := prog_name + " help:" + `
-
-  Command              Description
-  ===================  ============================================
-  ls [pattern]         list projects
-  ll                   list folders in the projects directory
-  new <project name>   create a new project
-  cd <project name>    enter a project
-  rm <project name>    delete a project from the database
-  help                 print this help
-  quit                 exit` + " " + prog_name + `
-                        `
-			fmt.Println(helpstr)
+			clihelp()
 		case "quit":
 			break L
 		default:
