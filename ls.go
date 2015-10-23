@@ -15,7 +15,7 @@ func ls(dir string) (int, string) {
 
 	f, err = os.Open(dir)
 	if err != nil {
-		return 1, fmt.Sprintf ("failed to open %s (%v)\n", dir, err)
+		return 1, fmt.Sprintf("failed to open %s (%v)\n", dir, err)
 	}
 
 	fi_buf, err = f.Stat()
