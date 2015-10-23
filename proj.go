@@ -188,6 +188,8 @@ func listdb(db *sql.DB, pattern string) {
 		var username string
 		rows.Scan(&id, &name, &date, &username)
 		creation_date, _ := time.Parse(datelayout, date)
+
+		/* list with user id
 		fmt.Printf("%s%03d%s %s %s[%s]%s %s%s%s\n",
 			"\033[31;1m",
 			id,
@@ -199,12 +201,24 @@ func listdb(db *sql.DB, pattern string) {
 			"\033[32;1m",
 			name,
 			"\033[0m")
+		*/
+
+		fmt.Printf("%s%03d%s %s[%s]%s %s%s%s\n",
+			"\033[31;1m",
+			id,
+			"\033[0m",
+			"\033[43;31m",
+			creation_date.Format("2006-01-02"),
+			"\033[0m",
+			"\033[32;1m",
+			name,
+			"\033[0m")
 	}
 	rows.Close()
 }
 
 func usage() {
-	fmt.Printf("usage: %s ls [pattern]|new <project name>|init\n",
+	fmt.Printf("usage: %s ls [pattern]|new <project name>|rm <project name>|init\n",
 		prog_name)
 }
 
@@ -259,6 +273,8 @@ func newproj(db *sql.DB, name string) int {
 }
 
 func rmproj(db *sql.DB, name string) int {
+	projname := strings.Trim(name, "/")
+
 	tx, err := db.Begin()
 	if err != nil {
 		log.Println(err)
@@ -266,6 +282,24 @@ func rmproj(db *sql.DB, name string) int {
 	}
 
 	req := `
+        select author from projects
+        where name = '` + projname + "'"
+	rows, err := db.Query(req)
+	if err != nil {
+		log.Println(err)
+		return 1
+	}
+        var uid string
+        for rows.Next() {
+                rows.Scan(&uid)
+        }
+        rows.Close()
+	if (uid != me.Uid) {
+		fmt.Println("error: " + projname + " is not your project")
+		return 1
+	}
+
+	req = `
         delete from projects
         where name = ?
         `
@@ -276,7 +310,7 @@ func rmproj(db *sql.DB, name string) int {
 		return 1
 	}
 
-	_, err = stmt.Exec(name)
+	_, err = stmt.Exec(projname)
 
 	stmt.Close()
 	tx.Commit()
@@ -287,7 +321,7 @@ func rmproj(db *sql.DB, name string) int {
 		return 1
 	}
 
-	print("deleted project " + name + " from database")
+	print("deleted project " + projname + " from database")
 
 	return 0
 }
@@ -405,8 +439,9 @@ func banner() {
   _/_/_/    _/          _/_/    _/       
  _/                            _/        
 _/                          _/           `)
-	fmt.Println("   Welcome " + me.Name + " !")
+	fmt.Println("       " + prog_name + " version " + version)
 	fmt.Println("")
+	fmt.Println("Welcome " + me.Name + " !")
 }
 
 func reguser(db *sql.DB, me *user.User) int {
@@ -525,6 +560,12 @@ func main() {
 			os.Exit(1)
 		}
 		newproj(db, os.Args[2])
+	case "rm":
+		if len(os.Args) != 3 {
+			usage()
+			os.Exit(1)
+		}
+		rmproj(db, os.Args[2])
 	default:
 		usage()
 	}
