@@ -24,8 +24,9 @@ const version string = "1.0"
 var (
 	prog_name string = os.Args[0]
 
-	projroot string = os.Getenv("HOME") + "/projects"
-	dbfile   string = projroot + "/.proj.db"
+	projroot   string = os.Getenv("HOME") + "/projects"
+	dbfilename string = "/.proj.db"
+	dbfile     string = projroot + dbfilename
 
 	projshell string = "/usr/bin/ksh"
 
@@ -190,6 +191,12 @@ func main() {
 	me, err = user.Current()
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	// where is my projroot
+	if os.Getenv("PROJ_HOME") != "" {
+		projroot = os.Getenv("PROJ_HOME")
+		dbfile = projroot + dbfilename
 	}
 
 	// check the projects root folder exists
