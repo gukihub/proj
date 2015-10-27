@@ -216,10 +216,7 @@ func main() {
 			db = opendb()
 			initdb(db)
 			// add existing projects to the db, if any
-			rc, str := update_proj(db, ".")
-			if rc != 0 {
-				fmt.Println(str)
-			}
+			update_proj(db, get_dir("."))
 			closedb(db)
 			return
 		} else {
