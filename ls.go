@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"strings"
 	"syscall"
 )
 
@@ -33,6 +34,9 @@ func ls(dir string) (int, string) {
 	}
 
 	for _, g := range fi_tab {
+		if strings.HasPrefix(g.Name(), ".") {
+			continue
+		}
 		userinfo, _ := user.LookupId(fmt.Sprintf("%d", g.Sys().(*syscall.Stat_t).Uid))
 		fmt.Printf("%-11s %s %d %s %s\n",
 			g.Mode(),

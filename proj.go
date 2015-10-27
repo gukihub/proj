@@ -215,6 +215,11 @@ func main() {
 		if !FileExists(dbfile) {
 			db = opendb()
 			initdb(db)
+			// add existing projects to the db, if any
+			rc, str := update_proj(db, ".")
+			if rc != 0 {
+				fmt.Println(str)
+			}
 			closedb(db)
 			return
 		} else {
