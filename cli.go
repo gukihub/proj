@@ -29,8 +29,8 @@ _/                          _/           `)
 func clihelp() {
 	helpstr := `
   Command              Description
-  ===================  ============================================
-  ls [pattern]         list projects
+  ===================  ===============================================
+  ls [regexp]          list projects, optionally filter with a regexp
   ll                   list folders in the projects directory
   new <project name>   create a new project
   cd <project name>    enter a project
@@ -121,9 +121,10 @@ func listdb(db *sql.DB, pattern string) {
                 from
                         projects, users
                 where
-                        projects.name like ` + "'%" + pattern + "%'" + `
+			projects.name regexp ` + "'" + pattern + "'" + `
                         and projects.author = users.id
                 `
+		//projects.name glob ` + "'*" + pattern + "*'" + `
 	} else {
 		req = `
                 select

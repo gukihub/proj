@@ -13,11 +13,12 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/mattn/go-sqlite3"
 	"log"
 	"os"
 	"os/user"
 	"path"
+	"regexp"
 )
 
 const version string = "1.0"
@@ -89,7 +90,16 @@ func opendb() *sql.DB {
 	var db *sql.DB
 	var err error
 
-	db, err = sql.Open("sqlite3", dbfile)
+	regex := func(re, s string) (bool, error) {
+		return regexp.MatchString(re, s)
+	}
+	sql.Register("sqlite3_with_go_regexp",
+		&sqlite3.SQLiteDriver{
+			ConnectHook: func(conn *sqlite3.SQLiteConn) error {
+				return conn.RegisterFunc("regexp", regex, true)
+			},
+		})
+	db, err = sql.Open("sqlite3_with_go_regexp", dbfile)
 	if err != nil {
 		log.Fatal(err)
 	}
