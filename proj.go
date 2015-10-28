@@ -17,12 +17,13 @@ import (
 	"log"
 	"os"
 	"os/user"
+	"path"
 )
 
 const version string = "1.0"
 
 var (
-	prog_name string = os.Args[0]
+	prog_name string = path.Base(os.Args[0])
 
 	projroot   string = os.Getenv("HOME") + "/projects"
 	dbfilename string = "/.proj.db"

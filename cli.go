@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path"
 	"strings"
 	"time"
 )
@@ -22,9 +21,9 @@ func banner() {
   _/_/_/    _/          _/_/    _/
  _/                            _/
 _/                          _/           `)
-	fmt.Println("       " + path.Base(prog_name) + " version " + version)
+	fmt.Println("       " + prog_name + " version " + version)
 	fmt.Println("")
-	fmt.Println("Welcome " + me.Name + " !")
+	//fmt.Println("Welcome " + me.Name + " !")
 }
 
 func clihelp() {
