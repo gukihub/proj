@@ -28,8 +28,7 @@ _/                          _/           `)
 }
 
 func clihelp() {
-	helpstr := prog_name + " help:" + `
-
+	helpstr := `
   Command              Description
   ===================  ============================================
   ls [pattern]         list projects
