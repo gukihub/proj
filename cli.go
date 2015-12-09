@@ -123,6 +123,8 @@ func listdb(db *sql.DB, pattern string) {
                 where
 			projects.name regexp ` + "'" + pattern + "'" + `
                         and projects.author = users.id
+		order by
+			projects.creation_date
                 `
 		//projects.name glob ` + "'*" + pattern + "*'" + `
 	} else {
@@ -134,6 +136,8 @@ func listdb(db *sql.DB, pattern string) {
                         projects, users
                 where
                         projects.author = users.id
+		order by
+			projects.creation_date
                 `
 
 	}
@@ -177,7 +181,35 @@ func listdb(db *sql.DB, pattern string) {
 	rows.Close()
 }
 
+func filedate(file string) string {
+	var fi_buf os.FileInfo
+	var f *os.File
+	var epoch int64
+	var err error
+
+	f, err = os.Open(file)
+	if err != nil {
+		return ""
+	}
+	fi_buf, err = f.Stat()
+	if err != nil {
+		return ""
+	}
+	epoch = fi_buf.ModTime().Unix()
+	return time.Unix(epoch, 0).Format("2006-01-02 15:04:05")
+}
+
 func newproj(db *sql.DB, name string) int {
+	var creation_date string
+
+	projdir := projroot + "/" + name
+
+	if checkdir(projdir, false) {
+		creation_date = filedate(projdir)
+	} else {
+		creation_date = time.Now().Format("2006-01-02 15:04:05")
+	}
+
 	tx, err := db.Begin()
 	if err != nil {
 		log.Println(err)
@@ -186,7 +218,7 @@ func newproj(db *sql.DB, name string) int {
 
 	req := `
         insert into projects(name, author, creation_date)
-        values(?, ?, datetime('now'))
+        values(?, ?, ?)
         `
 
 	stmt, err := tx.Prepare(req)
@@ -195,7 +227,7 @@ func newproj(db *sql.DB, name string) int {
 		return 1
 	}
 
-	_, err = stmt.Exec(name, me.Uid)
+	_, err = stmt.Exec(name, me.Uid, creation_date)
 	if err != nil {
 		log.Println(err)
 		stmt.Close()
@@ -207,8 +239,6 @@ func newproj(db *sql.DB, name string) int {
 	tx.Commit()
 
 	print("created project " + name + " in database")
-
-	projdir := projroot + "/" + name
 
 	if checkdir(projdir, false) {
 		print("not creating directory " + projdir +
